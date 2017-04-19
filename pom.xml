@@ -22,7 +22,7 @@
     <groupId>com.zillow</groupId>
     <artifactId>stail</artifactId>
     <name>Stream Tail</name>
-    <url>https://github.com/trulia/stail</url> <!-- TODO -->
+    <url>https://github.com/trulia/stail</url>
     <version>1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
@@ -35,10 +35,9 @@
     </licenses>
 
     <scm>
-        <!-- TODO -->
-        <connection>scm:git:https://git-wip-us.apache.org/repos/asf/maven-wagon.git</connection>
-        <developerConnection>scm:git:https://git-wip-us.apache.org/repos/asf/maven-wagon.git</developerConnection>
-        <url>https://github.com/apache/maven-wagon/tree/${project.scm.tag}</url>
+        <connection>scm:git:https://github.com/trulia/stail.git</connection>
+        <developerConnection>scm:git:https://github.com/trulia/stail.git</developerConnection>
+        <url>https://github.com/trulia/stail/tree/${project.scm.tag}</url>
         <tag>master</tag>
     </scm>
 

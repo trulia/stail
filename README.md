@@ -7,7 +7,7 @@ A simple utility designed to mimic `tail -f` for Kinesis streams.
 ``` shell
 mvn clean package
 bash ./target/classes/build.sh
-sudo cp ./target/stail /usr/local/bin
+sudo cp ./target/stail /usr/local/bin  # this step is optional
 ```
 
 ## usage
@@ -48,3 +48,4 @@ stail --stream my-favourite-stream --role arn:aws:iam::12345678912345:role/my-fa
 ## known limitations
 
 - currently doesnt handle resharding
+- currently assumes all data is valid JSON
