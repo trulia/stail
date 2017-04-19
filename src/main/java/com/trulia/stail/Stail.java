@@ -60,6 +60,9 @@ public class Stail {
     @Parameter(names = "--start", description = "time to start fetching records from relative to now. eg: PT15M is 15mins ago", required = false)
     private String start = null;
 
+    @Parameter(names = "--json", description = "enable json payload reformatting (single payload per line)")
+    private boolean json = false;
+
     private static List<Shard> getShards(AmazonKinesis client, String stream) {
         DescribeStreamRequest describeStreamRequest = new DescribeStreamRequest();
         describeStreamRequest.setStreamName(stream);
@@ -125,7 +128,7 @@ public class Stail {
             Map<Shard, String> shardIterators = new HashMap<>();
             getShards(client, stail.stream).forEach(shard -> shardIterators.put(shard, getShardIterator(client, stail.stream, shard, stail.start)));
 
-            IRecordProcessor processor = new JSONRecordProcessor();
+            IRecordProcessor processor = stail.json ? new JSONRecordProcessor() : new RawRecordProcessor();
 
             Map<Shard, RateLimiter> rateLimiters = new HashMap<>();
             shardIterators.keySet().forEach(shard -> rateLimiters.put(shard, RateLimiter.create(MAX_SHARD_THROUGHPUT)));

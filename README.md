@@ -19,6 +19,9 @@ Usage: stail [options]
   Options:
     --duration
       how long the stream should be tailed. eg: PT15M is 15mins
+    --json
+      enable json payload reformatting (single payload per line)
+      Default: false
     --profile
       AWS profile to use for credentials
     --region
@@ -48,4 +51,3 @@ stail --stream my-favourite-stream --role arn:aws:iam::12345678912345:role/my-fa
 ## known limitations
 
 - currently doesnt handle resharding
-- currently assumes all data is valid JSON
