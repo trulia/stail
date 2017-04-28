@@ -50,4 +50,3 @@ stail --stream my-favourite-stream --role arn:aws:iam::12345678912345:role/my-fa
 
 ## known limitations
 
-- currently doesnt handle resharding

@@ -34,6 +34,7 @@ public class RawRecordProcessor implements IRecordProcessor {
             byte[] bytes = new byte[record.getData().remaining()];
             record.getData().get(bytes);
             System.out.write(bytes, 0, bytes.length);
+            System.out.println();
         });
     }
 

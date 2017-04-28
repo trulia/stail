@@ -29,6 +29,7 @@ import com.beust.jcommander.JCommander;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParameterException;
 import com.google.common.base.Strings;
+import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.RateLimiter;
 import org.slf4j.Logger;
 
@@ -98,6 +99,23 @@ public class Stail {
         return getShardIteratorResult.getShardIterator();
     }
 
+    private static String getOldestShardIterator(AmazonKinesis client, String stream, Shard shard) {
+        GetShardIteratorRequest getShardIteratorRequest = new GetShardIteratorRequest();
+        getShardIteratorRequest.setStreamName(stream);
+        getShardIteratorRequest.setShardId(shard.getShardId());
+        getShardIteratorRequest.setShardIteratorType(ShardIteratorType.TRIM_HORIZON);
+
+        GetShardIteratorResult getShardIteratorResult = client.getShardIterator(getShardIteratorRequest);
+        return getShardIteratorResult.getShardIterator();
+    }
+
+    private static Map<Shard, String> getShardIterators(AmazonKinesis client, String stream, String start) {
+        Map<Shard, String> shardIterators = new HashMap<>();
+        getShards(client, stream).forEach(shard -> shardIterators.put(shard, getShardIterator(client, stream, shard, start)));
+
+        return shardIterators;
+    }
+
     public static void main(String[] args) {
         final Stail stail = new Stail();
 
@@ -125,8 +143,7 @@ public class Stail {
                     .build();
 
             // prepare the initial shard iterators at the LATEST position
-            Map<Shard, String> shardIterators = new HashMap<>();
-            getShards(client, stail.stream).forEach(shard -> shardIterators.put(shard, getShardIterator(client, stail.stream, shard, stail.start)));
+            Map<Shard, String> shardIterators = getShardIterators(client, stail.stream, stail.start);
 
             IRecordProcessor processor = stail.json ? new JSONRecordProcessor() : new RawRecordProcessor();
 
@@ -135,9 +152,27 @@ public class Stail {
 
             long end = Strings.isNullOrEmpty(stail.duration) ? Long.MAX_VALUE : System.currentTimeMillis() + Duration.parse(stail.duration).toMillis();
 
+            Set<String> reshardedShards = new HashSet<>();
+
             while (System.currentTimeMillis() < end) {
-                for (Shard shard : shardIterators.keySet()) {
-                    String shardIterator = shardIterators.get(shard);
+                if (!reshardedShards.isEmpty()) {
+                    // get the new list of shards
+                    List<Shard> shards = getShards(client, stail.stream);
+                    for (Shard shard : shards) {
+                        if (!Strings.isNullOrEmpty(shard.getParentShardId()) && reshardedShards.contains(shard.getParentShardId())) {
+                            // the old shard was split, so we need to consume this new shard from the beginning
+                            shardIterators.put(shard, getOldestShardIterator(client, stail.stream, shard));
+                        } else if (!Strings.isNullOrEmpty(shard.getAdjacentParentShardId()) && reshardedShards.contains(shard.getAdjacentParentShardId())) {
+                            // the old shards were merged into a new shard
+                            shardIterators.put(shard, getOldestShardIterator(client, stail.stream, shard));
+                        }
+                    }
+
+                    reshardedShards.clear();
+                }
+
+                for (Shard shard : Lists.newArrayList(shardIterators.keySet())) {
+                    String shardIterator = shardIterators.remove(shard);
 
                     GetRecordsRequest getRecordsRequest = new GetRecordsRequest();
                     getRecordsRequest.setShardIterator(shardIterator);
@@ -149,7 +184,6 @@ public class Stail {
                         processor.processRecords(records, null);
 
                         shardIterator = getRecordsResult.getNextShardIterator();
-                        shardIterators.put(shard, shardIterator);
 
                         if (records.size() <= 0) {
                             // nothing on the stream yet, so lets wait a bit to see if something appears
@@ -162,6 +196,12 @@ public class Stail {
 
                             // optionally sleep if we have hit the limit for this shard
                             rateLimiters.get(shard).acquire(bytesRead);
+                        }
+
+                        if (!Strings.isNullOrEmpty(shardIterator)) {
+                            shardIterators.put(shard, shardIterator);
+                        } else {
+                            reshardedShards.add(shard.getShardId());
                         }
                     } catch (ProvisionedThroughputExceededException e) {
                         logger.warn("tripped the max throughput.  Backing off: {}", e.getMessage());
