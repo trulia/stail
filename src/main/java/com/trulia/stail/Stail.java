@@ -99,6 +99,18 @@ public class Stail {
         return getShardIteratorResult.getShardIterator();
     }
 
+    private static String getShardIteratorAtSequenceNumber(AmazonKinesis client, String stream, Shard shard, String sequenceNumber) {
+        GetShardIteratorRequest getShardIteratorRequest = new GetShardIteratorRequest();
+        getShardIteratorRequest.setStreamName(stream);
+        getShardIteratorRequest.setShardId(shard.getShardId());
+
+        getShardIteratorRequest.setShardIteratorType(ShardIteratorType.AT_SEQUENCE_NUMBER);
+        getShardIteratorRequest.setStartingSequenceNumber(sequenceNumber);
+
+        GetShardIteratorResult getShardIteratorResult = client.getShardIterator(getShardIteratorRequest);
+        return getShardIteratorResult.getShardIterator();
+    }
+
     private static String getOldestShardIterator(AmazonKinesis client, String stream, Shard shard) {
         GetShardIteratorRequest getShardIteratorRequest = new GetShardIteratorRequest();
         getShardIteratorRequest.setStreamName(stream);
@@ -154,6 +166,8 @@ public class Stail {
 
             Set<String> reshardedShards = new HashSet<>();
 
+            Map<Shard, String> sequenceNumbers = new HashMap<>();
+
             while (System.currentTimeMillis() < end) {
                 if (!reshardedShards.isEmpty()) {
                     // get the new list of shards
@@ -194,6 +208,8 @@ public class Stail {
                                     .reduce((_1, _2) -> _1 + _2)
                                     .get();
 
+                            sequenceNumbers.put(shard, records.get(records.size() - 1).getSequenceNumber());
+
                             // optionally sleep if we have hit the limit for this shard
                             rateLimiters.get(shard).acquire(bytesRead);
                         }
@@ -206,6 +222,19 @@ public class Stail {
                     } catch (ProvisionedThroughputExceededException e) {
                         logger.warn("tripped the max throughput.  Backing off: {}", e.getMessage());
                         TimeUnit.SECONDS.sleep(6); // we tripped the max throughput.  Back off
+
+                        // add the original iterator back into the map so we can try it again
+                        shardIterators.put(shard, shardIterator);
+                    } catch (ExpiredIteratorException e) {
+                        logger.debug("Iterator expired", e);
+
+                        String sequenceNumber = sequenceNumbers.get(shard);
+                        if (sequenceNumber == null) {
+                            logger.warn("No previously known sequence number for {}.  Moving to LATEST", shard.getShardId());
+                            shardIterators.put(shard,  getShardIterator(client, stail.stream, shard, null));
+                        } else {
+                            shardIterators.put(shard, getShardIteratorAtSequenceNumber(client, stail.stream, shard, sequenceNumber));
+                        }
                     }
                 }
             }
